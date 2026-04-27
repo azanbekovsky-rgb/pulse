@@ -1,0 +1,1497 @@
+puls-app/
+├── index.html        ← точка входа
+├── manifest.json     ← делает приложение устанавливаемым
+├── sw.js             ← service worker (офлайн режим)
+└── app.js            ← вся логика
+{
+  "name": "Пульс — Уличный фитнес",
+  "short_name": "Пульс",
+  "description": "Тренировки на турнике, отжимания, брусья, пресс и бег",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#e8ff47",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%23e8ff47'/%3E%3Cpolyline points='20,96 44,96 54,60 66,132 80,40 92,152 104,68 116,120 132,120 172,120' stroke='%230a0a0a' stroke-width='12' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%23e8ff47'/%3E%3Cpolyline points='50,256 120,256 148,160 176,352 212,100 244,412 276,180 308,320 356,320 462,320' stroke='%230a0a0a' stroke-width='30' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["fitness", "health", "sports"],
+  "lang": "ru"
+}
+const CACHE = 'puls-v1';
+const ASSETS = [
+  './',
+  './index.html',
+  './app.js',
+  './manifest.json',
+  'https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;700;900&family=DM+Sans:wght@300;400;500&display=swap'
+];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS).catch(() => {})));
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(keys =>
+    Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+  ));
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', e => {
+  e.respondWith(
+    caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => cached))
+  );
+});
+// ═══════════════════════════════════════════════
+//  ПУЛЬС — app.js
+//  Вся логика: авторизация, тренировки, таймер, прогресс
+// ═══════════════════════════════════════════════
+
+// ── ДАННЫЕ ТРЕНИРОВОК ──────────────────────────
+const WORKOUT_PROGRAMS = {
+  pullups: {
+    id: 'pullups',
+    name: 'Подтягивания',
+    emoji: '🏗️',
+    desc: 'Турник — основа силы спины',
+    color: '#e8ff47',
+    plans: [
+      { week: 1, label: 'Неделя 1 — Старт',    sets: [{reps:3},{reps:3},{reps:2},{reps:2},{reps:3}], rest: 90 },
+      { week: 2, label: 'Неделя 2 — Рост',     sets: [{reps:4},{reps:4},{reps:3},{reps:3},{reps:4}], rest: 90 },
+      { week: 3, label: 'Неделя 3 — Сила',     sets: [{reps:5},{reps:5},{reps:4},{reps:4},{reps:5}], rest: 120 },
+      { week: 4, label: 'Неделя 4 — Выносл.',  sets: [{reps:6},{reps:6},{reps:5},{reps:5},{reps:6}], rest: 120 },
+      { week: 5, label: 'Неделя 5 — Мощь',     sets: [{reps:8},{reps:7},{reps:6},{reps:6},{reps:8}], rest: 120 },
+    ]
+  },
+  pushups: {
+    id: 'pushups',
+    name: 'Отжимания',
+    emoji: '💪',
+    desc: 'Грудь, трицепс, плечи',
+    color: '#ff6b35',
+    plans: [
+      { week: 1, label: 'Неделя 1 — Старт',    sets: [{reps:10},{reps:8},{reps:6},{reps:6},{reps:10}], rest: 60 },
+      { week: 2, label: 'Неделя 2 — Рост',     sets: [{reps:12},{reps:10},{reps:8},{reps:8},{reps:12}], rest: 60 },
+      { week: 3, label: 'Неделя 3 — Сила',     sets: [{reps:15},{reps:13},{reps:10},{reps:10},{reps:15}], rest: 75 },
+      { week: 4, label: 'Неделя 4 — Выносл.',  sets: [{reps:18},{reps:15},{reps:12},{reps:12},{reps:18}], rest: 75 },
+      { week: 5, label: 'Неделя 5 — Мощь',     sets: [{reps:20},{reps:18},{reps:15},{reps:15},{reps:20}], rest: 90 },
+    ]
+  },
+  dips: {
+    id: 'dips',
+    name: 'Брусья',
+    emoji: '⚡',
+    desc: 'Трицепс и нижняя грудь',
+    color: '#a78bfa',
+    plans: [
+      { week: 1, label: 'Неделя 1 — Старт',    sets: [{reps:5},{reps:5},{reps:4},{reps:4},{reps:5}], rest: 90 },
+      { week: 2, label: 'Неделя 2 — Рост',     sets: [{reps:7},{reps:6},{reps:5},{reps:5},{reps:7}], rest: 90 },
+      { week: 3, label: 'Неделя 3 — Сила',     sets: [{reps:9},{reps:8},{reps:7},{reps:7},{reps:9}], rest: 90 },
+      { week: 4, label: 'Неделя 4 — Выносл.',  sets: [{reps:10},{reps:9},{reps:8},{reps:8},{reps:10}], rest: 120 },
+      { week: 5, label: 'Неделя 5 — Мощь',     sets: [{reps:12},{reps:11},{reps:10},{reps:10},{reps:12}], rest: 120 },
+    ]
+  },
+  abs: {
+    id: 'abs',
+    name: 'Пресс',
+    emoji: '🔥',
+    desc: 'Кор и стабилизация тела',
+    color: '#fb923c',
+    plans: [
+      { week: 1, label: 'Неделя 1 — Старт',    sets: [{reps:15},{reps:15},{reps:10},{reps:10},{reps:15}], rest: 45 },
+      { week: 2, label: 'Неделя 2 — Рост',     sets: [{reps:20},{reps:18},{reps:15},{reps:15},{reps:20}], rest: 45 },
+      { week: 3, label: 'Неделя 3 — Сила',     sets: [{reps:25},{reps:22},{reps:18},{reps:18},{reps:25}], rest: 60 },
+      { week: 4, label: 'Неделя 4 — Выносл.',  sets: [{reps:30},{reps:25},{reps:20},{reps:20},{reps:30}], rest: 60 },
+      { week: 5, label: 'Неделя 5 — Мощь',     sets: [{reps:35},{reps:30},{reps:25},{reps:25},{reps:35}], rest: 60 },
+    ]
+  },
+  run: {
+    id: 'run',
+    name: 'Бег',
+    emoji: '🏃',
+    desc: 'Выносливость и кардио',
+    color: '#34d399',
+    plans: [
+      { week: 1, label: 'Неделя 1 — Старт',    sets: [{reps:10},{reps:10},{reps:8},{reps:8},{reps:10}], rest: 60, unit:'мин' },
+      { week: 2, label: 'Неделя 2 — Рост',     sets: [{reps:12},{reps:12},{reps:10},{reps:10},{reps:12}], rest: 60, unit:'мин' },
+      { week: 3, label: 'Неделя 3 — Выносл.',  sets: [{reps:15},{reps:15},{reps:12},{reps:12},{reps:15}], rest: 90, unit:'мин' },
+      { week: 4, label: 'Неделя 4 — Дистанц.', sets: [{reps:20},{reps:18},{reps:15},{reps:15},{reps:20}], rest: 90, unit:'мин' },
+      { week: 5, label: 'Неделя 5 — Марафон',  sets: [{reps:25},{reps:22},{reps:20},{reps:20},{reps:25}], rest: 120, unit:'мин' },
+    ]
+  }
+};
+
+// ── STATE ──────────────────────────────────────
+let S = {
+  view: 'splash',   // splash | auth | app
+  authTab: 'login', // login | register
+  appTab: 'home',   // home | workout | progress | profile
+  currentUser: null,
+  // workout session
+  activeWorkout: null,  // id из WORKOUT_PROGRAMS
+  activePlan: null,     // index плана (недели)
+  sessionSets: [],      // [{done:bool, reps:int}]
+  currentSet: 0,
+  timerRunning: false,
+  timerSeconds: 0,
+  timerInterval: null,
+  restMode: false,
+  restSeconds: 0,
+};
+
+// ── DB (localStorage) ─────────────────────────
+const DB = {
+  getUsers()     { return JSON.parse(localStorage.getItem('puls_users') || '{}'); },
+  saveUsers(u)   { localStorage.setItem('puls_users', JSON.stringify(u)); },
+  getUserData(email) {
+    return JSON.parse(localStorage.getItem('puls_data_' + email) || 'null');
+  },
+  saveUserData(email, data) {
+    localStorage.setItem('puls_data_' + email, JSON.stringify(data));
+  },
+  getSession()   { return JSON.parse(localStorage.getItem('puls_session') || 'null'); },
+  saveSession(u) { localStorage.setItem('puls_session', JSON.stringify(u)); },
+  clearSession() { localStorage.removeItem('puls_session'); },
+};
+
+function getUserData() {
+  if (!S.currentUser) return null;
+  return DB.getUserData(S.currentUser.email) || {
+    email: S.currentUser.email,
+    name: S.currentUser.name,
+    workouts: [],        // история: {id, wid, plan, date, setsCompleted, totalReps}
+    progress: {},        // {wid: {currentPlan:0, totalSessions:0, totalReps:0}}
+    streak: 0,
+    lastWorkoutDate: null
+  };
+}
+function saveUserData(data) {
+  DB.saveUserData(S.currentUser.email, data);
+}
+
+// ── RENDER ENGINE ──────────────────────────────
+function render() {
+  const root = document.getElementById('root');
+  if (!root) return;
+  root.innerHTML = views[S.view]();
+  attachEvents();
+}
+
+// ── VIEWS ──────────────────────────────────────
+const views = {
+
+  splash: () => `
+    <div class="splash">
+      <div class="splash-inner">
+        ${logoSVG(80)}
+        <h1 class="splash-title">ПУЛЬС</h1>
+        <p class="splash-sub">УЛИЧНЫЙ ФИТНЕС</p>
+        <div class="splash-loader"><div class="splash-loader-fill"></div></div>
+      </div>
+    </div>`,
+
+  auth: () => {
+    const isLogin = S.authTab === 'login';
+    return `
+    <div class="auth-wrap">
+      <div class="auth-box">
+        <div class="auth-header">
+          ${logoSVG(40)}
+          <span class="auth-brand">ПУЛЬС</span>
+        </div>
+
+        <div class="tab-row">
+          <button class="tab ${isLogin?'tab--on':''}" data-tab="login">Войти</button>
+          <button class="tab ${!isLogin?'tab--on':''}" data-tab="register">Регистрация</button>
+        </div>
+
+        ${isLogin ? `
+        <div class="field-group">
+          <label class="field-label">Email</label>
+          <input class="field-input" id="f-email" type="email" placeholder="you@mail.com" autocomplete="email">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Пароль</label>
+          <input class="field-input" id="f-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div class="auth-error" id="auth-err"></div>
+        <button class="btn-main" id="btn-login">ВОЙТИ →</button>
+        ` : `
+        <div class="field-group">
+          <label class="field-label">Имя</label>
+          <input class="field-input" id="f-name" type="text" placeholder="Как тебя зовут?">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Email</label>
+          <input class="field-input" id="f-email" type="email" placeholder="you@mail.com">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Пароль</label>
+          <input class="field-input" id="f-pass" type="password" placeholder="Минимум 6 символов">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Подтверди пароль</label>
+          <input class="field-input" id="f-pass2" type="password" placeholder="Повтори пароль">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Возраст</label>
+          <input class="field-input" id="f-age" type="number" placeholder="Полных лет" min="14" max="99">
+        </div>
+        <label class="age-row" id="age-row">
+          <div class="chk-box" id="chk-box"></div>
+          <span class="age-text">Мне <strong>16+</strong> лет, принимаю условия использования</span>
+        </label>
+        <div class="auth-error" id="auth-err"></div>
+        <button class="btn-main" id="btn-register" disabled>СОЗДАТЬ АККАУНТ →</button>
+        `}
+      </div>
+    </div>`;
+  },
+
+  app: () => {
+    const tabs = {
+      home:     viewHome(),
+      workout:  viewWorkout(),
+      progress: viewProgress(),
+      profile:  viewProfile()
+    };
+    return `
+    <div class="app-wrap">
+      <header class="app-bar">
+        <div class="app-bar-left">
+          ${logoSVG(28)}
+          <span class="app-bar-title">ПУЛЬС</span>
+        </div>
+        <div class="app-bar-right">
+          <div class="avatar">${S.currentUser?.name?.[0]?.toUpperCase() || '?'}</div>
+        </div>
+      </header>
+
+      <main class="app-main" id="app-main">
+        ${tabs[S.appTab] || tabs.home}
+      </main>
+
+      <nav class="bottom-nav">
+        ${[
+          ['home',     '🏠', 'Главная'],
+          ['workout',  '💪', 'Тренировки'],
+          ['progress', '📈', 'Прогресс'],
+          ['profile',  '👤', 'Профиль'],
+        ].map(([id,ico,label]) => `
+          <button class="nav-btn ${S.appTab===id?'nav-btn--on':''}" data-tab="${id}">
+            <span class="nav-ico">${ico}</span>
+            <span class="nav-lbl">${label}</span>
+          </button>`).join('')}
+      </nav>
+    </div>`;
+  }
+};
+
+// ── VIEW: HOME ─────────────────────────────────
+function viewHome() {
+  const ud = getUserData();
+  const streak = calcStreak(ud);
+  const todayW = getTodayWorkouts(ud);
+  const totalKcal = todayW.reduce((a,b) => a + (b.totalReps * 2), 0);
+  const totalReps = todayW.reduce((a,b) => a + b.totalReps, 0);
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+
+  return `
+  <div class="section fade-in">
+    <div class="greeting">
+      <p class="greeting-sub">${greet},</p>
+      <h2 class="greeting-name">${ud?.name || S.currentUser?.name} 💪</h2>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card stat-card--accent">
+        <span class="stat-ico">🔥</span>
+        <div class="stat-val">${totalKcal}</div>
+        <div class="stat-lbl">ккал сегодня</div>
+      </div>
+      <div class="stat-card">
+        <span class="stat-ico">🔁</span>
+        <div class="stat-val">${totalReps}</div>
+        <div class="stat-lbl">повторений</div>
+      </div>
+      <div class="stat-card">
+        <span class="stat-ico">📅</span>
+        <div class="stat-val">${streak}</div>
+        <div class="stat-lbl">дней подряд</div>
+      </div>
+    </div>
+
+    <h3 class="sec-title">Выбери тренировку</h3>
+    <div class="workout-cards">
+      ${Object.values(WORKOUT_PROGRAMS).map(w => {
+        const prog = ud?.progress?.[w.id];
+        const plan = prog?.currentPlan || 0;
+        return `
+        <div class="workout-card" data-open="${w.id}">
+          <div class="wc-icon" style="background:${w.color}20;color:${w.color}">${w.emoji}</div>
+          <div class="wc-info">
+            <div class="wc-name">${w.name}</div>
+            <div class="wc-desc">${w.desc}</div>
+          </div>
+          <div class="wc-badge" style="background:${w.color}20;color:${w.color}">
+            Нед. ${plan + 1}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+// ── VIEW: WORKOUT ──────────────────────────────
+function viewWorkout() {
+  if (!S.activeWorkout) return viewWorkoutPicker();
+  return viewWorkoutSession();
+}
+
+function viewWorkoutPicker() {
+  const ud = getUserData();
+  return `
+  <div class="section fade-in">
+    <h3 class="sec-title">Тренировки</h3>
+    ${Object.values(WORKOUT_PROGRAMS).map(w => {
+      const prog = ud?.progress?.[w.id] || {};
+      const planIdx = prog.currentPlan || 0;
+      const plan = w.plans[planIdx];
+      const sessions = prog.totalSessions || 0;
+      const pct = Math.round((planIdx / w.plans.length) * 100);
+      return `
+      <div class="prog-card" data-start="${w.id}">
+        <div class="pc-top">
+          <div class="pc-icon" style="background:${w.color}22;color:${w.color}">${w.emoji}</div>
+          <div class="pc-info">
+            <div class="pc-name">${w.name}</div>
+            <div class="pc-sub">${plan.label} · ${sessions} сессий</div>
+          </div>
+          <button class="pc-btn" style="background:${w.color};color:#0a0a0a" data-start="${w.id}">
+            СТАРТ
+          </button>
+        </div>
+        <div class="prog-bar-wrap">
+          <div class="prog-bar-fill" style="width:${pct}%;background:${w.color}"></div>
+        </div>
+        <div class="pc-stats">
+          <span>${plan.sets.length} подходов</span>
+          <span>${plan.sets.map(s=>s.reps).join(' / ')} ${plan.unit || 'раз'}</span>
+          <span>Отдых ${plan.rest}с</span>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function viewWorkoutSession() {
+  const wid = S.activeWorkout;
+  const w = WORKOUT_PROGRAMS[wid];
+  const planIdx = S.activePlan;
+  const plan = w.plans[planIdx];
+  const sets = S.sessionSets;
+  const cur = S.currentSet;
+  const isRest = S.restMode;
+  const unit = plan.unit || 'раз';
+
+  const completedSets = sets.filter(s => s.done).length;
+  const allDone = completedSets === sets.length;
+
+  return `
+  <div class="section fade-in" id="session-view">
+    <div class="session-header">
+      <button class="back-btn" id="btn-back-workout">←</button>
+      <div>
+        <div class="session-name">${w.emoji} ${w.name}</div>
+        <div class="session-plan">${plan.label}</div>
+      </div>
+      <div class="session-count">${completedSets}/${sets.length}</div>
+    </div>
+
+    ${isRest ? `
+    <div class="rest-block">
+      <div class="rest-title">⏳ ОТДЫХ</div>
+      <div class="rest-timer" id="rest-timer-display">${fmtTime(S.restSeconds)}</div>
+      <div class="rest-sub">Следующий подход ${cur + 1} из ${sets.length}</div>
+      <button class="btn-skip" id="btn-skip-rest">Пропустить →</button>
+    </div>
+    ` : `
+    <div class="sets-list">
+      ${sets.map((set, i) => `
+        <div class="set-row ${i === cur && !set.done ? 'set-row--active' : ''} ${set.done ? 'set-row--done' : ''}">
+          <div class="set-num">${i + 1}</div>
+          <div class="set-reps">
+            ${set.done
+              ? `<span style="color:var(--accent)">✓ ${set.actualReps} ${unit}</span>`
+              : i === cur
+              ? `<span>${set.reps} ${unit}</span>`
+              : `<span style="color:var(--muted)">${set.reps} ${unit}</span>`
+            }
+          </div>
+          ${i === cur && !set.done ? `
+          <div class="set-controls">
+            <button class="rep-btn" data-adj="-1">−</button>
+            <span class="rep-count" id="cur-reps">${set.reps}</span>
+            <button class="rep-btn" data-adj="1">+</button>
+          </div>
+          ` : `<div class="set-controls"></div>`}
+        </div>
+      `).join('')}
+    </div>
+
+    ${!allDone ? `
+    <button class="btn-main btn-done-set" id="btn-done-set">
+      ВЫПОЛНИЛ ПОДХОД ${cur + 1} ✓
+    </button>
+    ` : `
+    <button class="btn-main btn-finish" id="btn-finish-session" style="background:#34d399;color:#0a0a0a">
+      🏆 ЗАВЕРШИТЬ ТРЕНИРОВКУ
+    </button>
+    `}
+    `}
+  </div>`;
+}
+
+// ── VIEW: PROGRESS ─────────────────────────────
+function viewProgress() {
+  const ud = getUserData();
+  const history = (ud?.workouts || []).slice().reverse().slice(0, 30);
+  const days = getLast7Days(ud);
+
+  return `
+  <div class="section fade-in">
+    <h3 class="sec-title">Активность за 7 дней</h3>
+    <div class="week-chart">
+      ${days.map(d => `
+        <div class="wc-col">
+          <div class="wc-bar-wrap">
+            <div class="wc-bar-inner" style="height:${d.pct}%;background:${d.count ? 'var(--accent)' : 'var(--surface2)'}"></div>
+          </div>
+          <div class="wc-day">${d.label}</div>
+          <div class="wc-cnt" style="color:${d.count?'var(--accent)':'var(--muted)'}">${d.count || '·'}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <h3 class="sec-title" style="margin-top:24px">Личный рекорд</h3>
+    <div class="records-grid">
+      ${Object.values(WORKOUT_PROGRAMS).map(w => {
+        const prog = ud?.progress?.[w.id] || {};
+        const best = prog.bestSession || 0;
+        const total = prog.totalReps || 0;
+        return `
+        <div class="rec-card">
+          <span class="rec-ico" style="color:${w.color}">${w.emoji}</span>
+          <div class="rec-name">${w.name}</div>
+          <div class="rec-val" style="color:${w.color}">${best}</div>
+          <div class="rec-sub">макс. за сессию</div>
+          <div class="rec-total">${total} всего</div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <h3 class="sec-title" style="margin-top:24px">История тренировок</h3>
+    ${history.length === 0
+      ? `<div class="empty-state">Пока нет тренировок. Начни первую! 💪</div>`
+      : history.map(w => {
+          const wInfo = WORKOUT_PROGRAMS[w.wid];
+          return `
+          <div class="history-item">
+            <span class="hi-ico">${wInfo?.emoji || '💪'}</span>
+            <div class="hi-info">
+              <div class="hi-name">${wInfo?.name || w.wid}</div>
+              <div class="hi-date">${w.date} · ${w.setsCompleted} подх. · ${w.totalReps} раз</div>
+            </div>
+            <div class="hi-reps" style="color:${wInfo?.color || 'var(--accent)'}">${w.totalReps}</div>
+          </div>`;
+        }).join('')
+    }
+  </div>`;
+}
+
+// ── VIEW: PROFILE ──────────────────────────────
+function viewProfile() {
+  const ud = getUserData();
+  const total = ud?.workouts?.length || 0;
+  const totalReps = Object.values(ud?.progress || {}).reduce((a,b) => a + (b.totalReps||0), 0);
+  const streak = calcStreak(ud);
+
+  return `
+  <div class="section fade-in">
+    <div class="profile-card">
+      <div class="profile-ava">${S.currentUser?.name?.[0]?.toUpperCase()}</div>
+      <div class="profile-name">${ud?.name || S.currentUser?.name}</div>
+      <div class="profile-email">${S.currentUser?.email}</div>
+    </div>
+
+    <div class="profile-stats">
+      <div class="pstat">
+        <div class="pstat-val" style="color:var(--accent)">${total}</div>
+        <div class="pstat-lbl">Тренировок</div>
+      </div>
+      <div class="pstat">
+        <div class="pstat-val" style="color:#ff6b35">${totalReps}</div>
+        <div class="pstat-lbl">Повторений</div>
+      </div>
+      <div class="pstat">
+        <div class="pstat-val" style="color:#34d399">${streak}</div>
+        <div class="pstat-lbl">Дней подряд</div>
+      </div>
+    </div>
+
+    <h3 class="sec-title">Прогресс программ</h3>
+    ${Object.values(WORKOUT_PROGRAMS).map(w => {
+      const prog = ud?.progress?.[w.id] || {};
+      const planIdx = prog.currentPlan || 0;
+      const pct = Math.round((planIdx / w.plans.length) * 100);
+      return `
+      <div class="prog-row">
+        <span style="color:${w.color};font-size:18px">${w.emoji}</span>
+        <div class="pr-info">
+          <div class="pr-name">${w.name}</div>
+          <div class="pr-bar"><div class="pr-fill" style="width:${pct}%;background:${w.color}"></div></div>
+        </div>
+        <div class="pr-pct" style="color:${w.color}">${pct}%</div>
+      </div>`;
+    }).join('')}
+
+    <button class="btn-logout" id="btn-logout">Выйти из аккаунта</button>
+  </div>`;
+}
+
+// ── EVENTS ─────────────────────────────────────
+function attachEvents() {
+  // Splash auto-transition handled in init
+
+  // AUTH
+  document.querySelectorAll('[data-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      S.authTab = btn.dataset.tab;
+      render();
+    });
+  });
+
+  const ageRow = document.getElementById('age-row');
+  if (ageRow) {
+    ageRow.addEventListener('click', () => {
+      const box = document.getElementById('chk-box');
+      const btn = document.getElementById('btn-register');
+      box.classList.toggle('chk-box--on');
+      btn.disabled = !box.classList.contains('chk-box--on');
+    });
+  }
+
+  const btnLogin = document.getElementById('btn-login');
+  if (btnLogin) btnLogin.addEventListener('click', doLogin);
+
+  const btnReg = document.getElementById('btn-register');
+  if (btnReg) btnReg.addEventListener('click', doRegister);
+
+  // Allow Enter key in auth forms
+  document.querySelectorAll('.field-input').forEach(inp => {
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        if (S.authTab === 'login') doLogin();
+        else if (document.getElementById('btn-register') && !document.getElementById('btn-register').disabled) doRegister();
+      }
+    });
+  });
+
+  // APP NAV
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      S.appTab = btn.dataset.tab;
+      if (S.appTab !== 'workout') S.activeWorkout = null;
+      render();
+    });
+  });
+
+  // HOME - open workout
+  document.querySelectorAll('[data-open]').forEach(el => {
+    el.addEventListener('click', () => {
+      S.appTab = 'workout';
+      startWorkout(el.dataset.open);
+    });
+  });
+
+  // WORKOUT PICKER - start
+  document.querySelectorAll('[data-start]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      startWorkout(el.dataset.start);
+    });
+  });
+
+  // SESSION
+  const btnBack = document.getElementById('btn-back-workout');
+  if (btnBack) btnBack.addEventListener('click', () => {
+    stopRestTimer();
+    S.activeWorkout = null; S.restMode = false;
+    render();
+  });
+
+  const btnDone = document.getElementById('btn-done-set');
+  if (btnDone) btnDone.addEventListener('click', doneSet);
+
+  const btnFinish = document.getElementById('btn-finish-session');
+  if (btnFinish) btnFinish.addEventListener('click', finishSession);
+
+  const btnSkip = document.getElementById('btn-skip-rest');
+  if (btnSkip) btnSkip.addEventListener('click', () => {
+    stopRestTimer(); S.restMode = false; render();
+  });
+
+  document.querySelectorAll('.rep-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const adj = parseInt(btn.dataset.adj);
+      const cur = S.currentSet;
+      S.sessionSets[cur].reps = Math.max(1, S.sessionSets[cur].reps + adj);
+      const el = document.getElementById('cur-reps');
+      if (el) el.textContent = S.sessionSets[cur].reps;
+    });
+  });
+
+  // PROFILE logout
+  const btnLogout = document.getElementById('btn-logout');
+  if (btnLogout) btnLogout.addEventListener('click', doLogout);
+}
+
+// ── AUTH ACTIONS ───────────────────────────────
+function doLogin() {
+  const email = (document.getElementById('f-email')?.value || '').trim().toLowerCase();
+  const pass  = document.getElementById('f-pass')?.value || '';
+  const err   = document.getElementById('auth-err');
+
+  if (!email || !pass) { showErr(err, 'Заполни все поля'); return; }
+
+  const users = DB.getUsers();
+  if (!users[email]) { showErr(err, 'Пользователь не найден'); return; }
+  if (users[email].password !== pass) { showErr(err, 'Неверный пароль'); return; }
+
+  S.currentUser = users[email];
+  DB.saveSession(S.currentUser);
+  S.view = 'app'; S.appTab = 'home';
+  render();
+  toast('👋 Добро пожаловать, ' + S.currentUser.name + '!');
+}
+
+function doRegister() {
+  const name  = (document.getElementById('f-name')?.value || '').trim();
+  const email = (document.getElementById('f-email')?.value || '').trim().toLowerCase();
+  const pass  = document.getElementById('f-pass')?.value || '';
+  const pass2 = document.getElementById('f-pass2')?.value || '';
+  const age   = parseInt(document.getElementById('f-age')?.value || '0');
+  const err   = document.getElementById('auth-err');
+
+  if (!name)  { showErr(err, 'Введи имя'); return; }
+  if (!/\S+@\S+\.\S+/.test(email)) { showErr(err, 'Некорректный email'); return; }
+  if (pass.length < 6) { showErr(err, 'Пароль минимум 6 символов'); return; }
+  if (pass !== pass2)  { showErr(err, 'Пароли не совпадают'); return; }
+  if (age < 16)        { showErr(err, 'Необходимо 16+ лет'); return; }
+
+  const users = DB.getUsers();
+  if (users[email]) { showErr(err, 'Email уже зарегистрирован'); return; }
+
+  const user = { name, email, age, password: pass };
+  users[email] = user;
+  DB.saveUsers(users);
+  S.currentUser = user;
+  DB.saveSession(user);
+
+  // Создать пустые данные
+  saveUserData({
+    email, name, workouts: [], progress: {}, streak: 0, lastWorkoutDate: null
+  });
+
+  S.view = 'app'; S.appTab = 'home';
+  render();
+  toast('🎉 Аккаунт создан! Погнали тренироваться!');
+}
+
+function doLogout() {
+  DB.clearSession();
+  S.currentUser = null; S.view = 'auth'; S.authTab = 'login';
+  S.activeWorkout = null; S.restMode = false;
+  stopRestTimer();
+  render();
+}
+
+// ── WORKOUT ACTIONS ────────────────────────────
+function startWorkout(wid) {
+  const ud = getUserData();
+  const prog = ud?.progress?.[wid] || {};
+  const planIdx = prog.currentPlan || 0;
+  const w = WORKOUT_PROGRAMS[wid];
+  const plan = w.plans[planIdx];
+
+  S.activeWorkout = wid;
+  S.activePlan = planIdx;
+  S.sessionSets = plan.sets.map(s => ({ reps: s.reps, done: false, actualReps: 0 }));
+  S.currentSet = 0;
+  S.restMode = false;
+  S.appTab = 'workout';
+  render();
+}
+
+function doneSet() {
+  const cur = S.currentSet;
+  const sets = S.sessionSets;
+  sets[cur].done = true;
+  sets[cur].actualReps = sets[cur].reps;
+
+  const next = sets.findIndex((s, i) => i > cur && !s.done);
+  if (next === -1) {
+    S.currentSet = sets.length; // all done
+    render();
+  } else {
+    S.currentSet = next;
+    const plan = WORKOUT_PROGRAMS[S.activeWorkout].plans[S.activePlan];
+    S.restMode = true;
+    S.restSeconds = plan.rest;
+    render();
+    startRestTimer();
+  }
+}
+
+function startRestTimer() {
+  stopRestTimer();
+  S.timerInterval = setInterval(() => {
+    S.restSeconds--;
+    const el = document.getElementById('rest-timer-display');
+    if (el) el.textContent = fmtTime(S.restSeconds);
+    if (S.restSeconds <= 0) {
+      stopRestTimer();
+      S.restMode = false;
+      render();
+      toast('💪 Отдых закончен! Следующий подход!');
+    }
+  }, 1000);
+}
+
+function stopRestTimer() {
+  clearInterval(S.timerInterval);
+  S.timerInterval = null;
+}
+
+function finishSession() {
+  stopRestTimer();
+  const wid = S.activeWorkout;
+  const planIdx = S.activePlan;
+  const sets = S.sessionSets;
+  const totalReps = sets.reduce((a, s) => a + (s.actualReps || s.reps), 0);
+  const setsCompleted = sets.filter(s => s.done).length;
+
+  const ud = getUserData();
+  if (!ud.progress[wid]) ud.progress[wid] = { currentPlan: 0, totalSessions: 0, totalReps: 0, bestSession: 0 };
+
+  const prog = ud.progress[wid];
+  prog.totalSessions++;
+  prog.totalReps += totalReps;
+  prog.bestSession = Math.max(prog.bestSession || 0, totalReps);
+
+  // Апгрейд плана каждые 3 сессии
+  if (prog.totalSessions % 3 === 0 && prog.currentPlan < WORKOUT_PROGRAMS[wid].plans.length - 1) {
+    prog.currentPlan++;
+    toast('🏆 Ты перешёл на следующий уровень! Неделя ' + (prog.currentPlan + 1));
+  }
+
+  ud.workouts.push({
+    id: Date.now(), wid, plan: planIdx,
+    date: new Date().toLocaleDateString('ru'),
+    setsCompleted, totalReps
+  });
+
+  ud.lastWorkoutDate = new Date().toDateString();
+  saveUserData(ud);
+
+  S.activeWorkout = null; S.restMode = false; S.appTab = 'home';
+  render();
+  toast('✅ Тренировка завершена! ' + totalReps + ' повторений!');
+}
+
+// ── HELPERS ────────────────────────────────────
+function calcStreak(ud) {
+  if (!ud?.workouts?.length) return 0;
+  const dates = [...new Set(ud.workouts.map(w => w.date))];
+  let streak = 0;
+  const today = new Date();
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const ds = d.toLocaleDateString('ru');
+    if (dates.includes(ds)) streak++;
+    else if (i > 0) break;
+  }
+  return streak;
+}
+
+function getTodayWorkouts(ud) {
+  const today = new Date().toLocaleDateString('ru');
+  return (ud?.workouts || []).filter(w => w.date === today);
+}
+
+function getLast7Days(ud) {
+  const workouts = ud?.workouts || [];
+  const days = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  const result = [];
+  let maxCount = 1;
+  const counts = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const ds = d.toLocaleDateString('ru');
+    const count = workouts.filter(w => w.date === ds).length;
+    counts.push(count);
+    maxCount = Math.max(maxCount, count);
+  }
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const dayIdx = d.getDay();
+    result.push({
+      label: days[dayIdx],
+      count: counts[6 - i],
+      pct: Math.round((counts[6 - i] / maxCount) * 100) || 0
+    });
+  }
+  return result;
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60), sec = s % 60;
+  return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+}
+
+function showErr(el, msg) {
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.classList.add('shake');
+  setTimeout(() => el.classList.remove('shake'), 400);
+}
+
+function toast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('toast--show');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => t.classList.remove('toast--show'), 3000);
+}
+
+function logoSVG(size) {
+  return `<div style="width:${size}px;height:${size}px;background:var(--accent);border-radius:${size*0.25}px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+    <svg width="${size*0.6}" height="${size*0.6}" viewBox="0 0 52 52" fill="none">
+      <polyline points="2,26 12,26 16,14 20,38 26,10 30,42 34,20 38,32 44,32 50,32"
+        stroke="#0a0a0a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>`;
+}
+
+// ── INIT ───────────────────────────────────────
+function init() {
+  // Register SW
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+
+  // Check saved session
+  const session = DB.getSession();
+  if (session) {
+    S.currentUser = session;
+    S.view = 'app';
+  } else {
+    S.view = 'splash';
+  }
+
+  render();
+
+  if (S.view === 'splash') {
+    setTimeout(() => {
+      S.view = 'auth';
+      render();
+    }, 2000);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', init);
+    <!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="description" content="Пульс — уличный фитнес: турник, отжимания, брусья, пресс, бег">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Пульс">
+  <title>Пульс</title>
+  <link rel="manifest" href="./manifest.json">
+
+  <!-- Apple touch icon (inline SVG as data-uri для GitHub Pages) -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23e8ff47'/%3E%3Cpolyline points='18,90 42,90 52,56 62,124 74,38 86,142 98,64 110,114 126,114 162,114' stroke='%230a0a0a' stroke-width='11' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;700;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
+
+  <style>
+    /* ═══════════════ RESET & BASE ═══════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #0a0a0a;
+      color: #f0f0f0;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ═══════════════ VARIABLES ═══════════════ */
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface2: #1e1e1e;
+      --border: #262626;
+      --accent: #e8ff47;
+      --text: #f0f0f0;
+      --muted: #666;
+      --r: 14px;
+      --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ═══════════════ ROOT ═══════════════ */
+    #root { height: 100%; overflow: hidden; }
+
+    /* ═══════════════ SPLASH ═══════════════ */
+    .splash {
+      height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg);
+    }
+    .splash-inner {
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      animation: fadeUp 0.7s var(--ease) both;
+    }
+    .splash-title {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 36px; font-weight: 900; letter-spacing: -1px;
+    }
+    .splash-sub {
+      font-size: 11px; letter-spacing: 3px; color: var(--muted);
+      text-transform: uppercase;
+    }
+    .splash-loader {
+      margin-top: 32px;
+      width: 160px; height: 2px;
+      background: var(--surface2);
+      border-radius: 2px; overflow: hidden;
+    }
+    .splash-loader-fill {
+      height: 100%; width: 0;
+      background: var(--accent);
+      animation: loadFill 1.8s var(--ease) forwards 0.2s;
+    }
+    @keyframes loadFill { to { width: 100%; } }
+
+    /* ═══════════════ AUTH ═══════════════ */
+    .auth-wrap {
+      height: 100vh; overflow-y: auto;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: 24px 20px 40px;
+      background: radial-gradient(ellipse 80% 50% at 50% 0%, #1a1a0a 0%, var(--bg) 70%);
+    }
+    .auth-box {
+      width: 100%; max-width: 420px;
+      display: flex; flex-direction: column; gap: 14px;
+      animation: fadeUp 0.45s var(--ease) both;
+    }
+    .auth-header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 12px;
+    }
+    .auth-brand {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 22px; font-weight: 900;
+    }
+    .tab-row {
+      display: flex; gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 4px;
+    }
+    .tab {
+      flex: 1; padding: 10px;
+      background: none; border: none;
+      color: var(--muted); cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px; font-weight: 500;
+      border-radius: 10px;
+      transition: all 0.2s var(--ease);
+    }
+    .tab--on { background: var(--accent); color: #0a0a0a; }
+
+    .field-group { display: flex; flex-direction: column; gap: 6px; }
+    .field-label {
+      font-size: 11px; font-weight: 500;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+    }
+    .field-input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 14px 16px;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px; outline: none;
+      transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+    }
+    .field-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(232,255,71,0.07);
+    }
+    .field-input::placeholder { color: #3a3a3a; }
+
+    .age-row {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      cursor: pointer;
+      transition: border-color 0.2s;
+      user-select: none;
+    }
+    .age-row:hover { border-color: var(--accent); }
+    .chk-box {
+      width: 20px; height: 20px; min-width: 20px;
+      border: 2px solid var(--border);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+      margin-top: 1px;
+    }
+    .chk-box--on {
+      background: var(--accent); border-color: var(--accent);
+    }
+    .chk-box--on::after { content: '✓'; color: #0a0a0a; font-size: 12px; font-weight: 700; }
+    .age-text { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .age-text strong { color: var(--text); }
+
+    .auth-error {
+      color: #ff5555; font-size: 12px; text-align: center;
+      padding: 6px; display: none;
+      animation: shake 0.3s ease;
+    }
+    .auth-error.shake { animation: shake 0.3s ease; }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      25%      { transform: translateX(-5px); }
+      75%      { transform: translateX(5px); }
+    }
+
+    .btn-main {
+      background: var(--accent); color: #0a0a0a;
+      border: none; border-radius: var(--r);
+      padding: 16px; width: 100%;
+      font-family: 'Unbounded', sans-serif;
+      font-size: 13px; font-weight: 700;
+      letter-spacing: 0.5px; cursor: pointer;
+      transition: all 0.2s var(--ease);
+    }
+    .btn-main:hover:not(:disabled) { background: #d4eb30; transform: translateY(-1px); }
+    .btn-main:active:not(:disabled) { transform: translateY(0); }
+    .btn-main:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ═══════════════ APP SHELL ═══════════════ */
+    .app-wrap {
+      height: 100vh;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .app-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .app-bar-left { display: flex; align-items: center; gap: 10px; }
+    .app-bar-title {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 17px; font-weight: 900;
+    }
+    .avatar {
+      width: 34px; height: 34px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 14px; color: var(--accent);
+    }
+    .app-main {
+      flex: 1; overflow-y: auto;
+      padding-bottom: 4px;
+    }
+    .app-main::-webkit-scrollbar { width: 3px; }
+    .app-main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ═══════════════ BOTTOM NAV ═══════════════ */
+    .bottom-nav {
+      display: flex;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .nav-btn {
+      flex: 1; padding: 10px 4px;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-family: 'DM Sans', sans-serif;
+      transition: color 0.2s;
+    }
+    .nav-btn--on { color: var(--accent); }
+    .nav-ico { font-size: 20px; }
+    .nav-lbl { font-size: 10px; }
+
+    /* ═══════════════ SECTIONS ═══════════════ */
+    .section { padding: 20px; }
+    .sec-title {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 14px;
+    }
+
+    /* ═══════════════ HOME ═══════════════ */
+    .greeting { margin-bottom: 22px; }
+    .greeting-sub { color: var(--muted); font-size: 13px; margin-bottom: 3px; }
+    .greeting-name {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 22px; font-weight: 700; letter-spacing: -0.5px;
+    }
+
+    .stats-row {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 10px; margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px 12px;
+    }
+    .stat-card--accent { background: var(--accent); border-color: var(--accent); }
+    .stat-card--accent .stat-val, .stat-card--accent .stat-lbl { color: #0a0a0a; }
+    .stat-ico { font-size: 20px; display: block; margin-bottom: 6px; }
+    .stat-val {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 22px; font-weight: 700; line-height: 1;
+    }
+    .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+    .workout-cards { display: flex; flex-direction: column; gap: 10px; }
+    .workout-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px 16px;
+      display: flex; align-items: center; gap: 14px;
+      cursor: pointer; transition: border-color 0.2s, transform 0.15s;
+    }
+    .workout-card:hover { border-color: var(--accent); transform: translateX(3px); }
+    .wc-icon {
+      width: 46px; height: 46px; min-width: 46px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    .wc-info { flex: 1; }
+    .wc-name { font-weight: 500; font-size: 16px; }
+    .wc-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .wc-badge {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 10px; font-weight: 700;
+      padding: 5px 10px; border-radius: 8px;
+    }
+
+    /* ═══════════════ WORKOUT PICKER ═══════════════ */
+    .prog-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r); padding: 16px;
+      margin-bottom: 12px; cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .prog-card:hover { border-color: #444; }
+    .pc-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .pc-icon {
+      width: 44px; height: 44px; min-width: 44px;
+      border-radius: 12px; font-size: 22px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pc-info { flex: 1; }
+    .pc-name { font-weight: 500; font-size: 16px; }
+    .pc-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .pc-btn {
+      border: none; border-radius: 10px;
+      padding: 8px 14px;
+      font-family: 'Unbounded', sans-serif;
+      font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: opacity 0.2s;
+    }
+    .pc-btn:hover { opacity: 0.85; }
+    .prog-bar-wrap {
+      height: 4px; background: var(--surface2);
+      border-radius: 4px; overflow: hidden; margin-bottom: 10px;
+    }
+    .prog-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s var(--ease); }
+    .pc-stats {
+      display: flex; gap: 12px;
+      font-size: 11px; color: var(--muted);
+    }
+
+    /* ═══════════════ SESSION ═══════════════ */
+    .session-header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px;
+    }
+    .back-btn {
+      width: 36px; height: 36px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; color: var(--text);
+      font-size: 16px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: border-color 0.2s;
+    }
+    .back-btn:hover { border-color: var(--accent); }
+    .session-name { font-weight: 600; font-size: 18px; }
+    .session-plan { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .session-count {
+      margin-left: auto;
+      font-family: 'Unbounded', sans-serif;
+      font-size: 13px; font-weight: 700; color: var(--accent);
+    }
+
+    .sets-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+    .set-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px 16px;
+      display: flex; align-items: center; gap: 12px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .set-row--active { border-color: var(--accent); background: rgba(232,255,71,0.04); }
+    .set-row--done  { opacity: 0.5; }
+    .set-num {
+      width: 28px; height: 28px;
+      background: var(--surface2); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 600; color: var(--muted);
+      flex-shrink: 0;
+    }
+    .set-reps { flex: 1; font-size: 15px; font-weight: 500; }
+    .set-controls { display: flex; align-items: center; gap: 8px; }
+    .rep-btn {
+      width: 32px; height: 32px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text);
+      font-size: 18px; cursor: pointer; transition: all 0.15s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .rep-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .rep-count {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 16px; font-weight: 700;
+      min-width: 28px; text-align: center;
+      color: var(--accent);
+    }
+
+    .btn-done-set { margin-top: 4px; }
+    .btn-finish { margin-top: 4px; }
+
+    /* ── REST BLOCK ── */
+    .rest-block {
+      text-align: center; padding: 40px 20px;
+    }
+    .rest-title {
+      font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 16px;
+    }
+    .rest-timer {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 72px; font-weight: 900;
+      letter-spacing: -4px; color: var(--accent);
+      line-height: 1; margin-bottom: 16px;
+    }
+    .rest-sub { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+    .btn-skip {
+      background: none; border: 1px solid var(--border);
+      border-radius: var(--r); padding: 12px 28px;
+      color: var(--text); font-size: 14px; cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .btn-skip:hover { border-color: var(--accent); }
+
+    /* ═══════════════ PROGRESS ═══════════════ */
+    .week-chart {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r); padding: 20px 16px;
+      display: flex; gap: 8px; align-items: flex-end;
+      margin-bottom: 6px;
+    }
+    .wc-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .wc-bar-wrap { width: 100%; height: 80px; display: flex; align-items: flex-end; }
+    .wc-bar-inner { width: 100%; border-radius: 6px; min-height: 4px; transition: height 0.6s var(--ease); }
+    .wc-day { font-size: 10px; color: var(--muted); }
+    .wc-cnt { font-family: 'Unbounded', sans-serif; font-size: 10px; font-weight: 700; }
+
+    .records-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+      margin-bottom: 6px;
+    }
+    .rec-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px;
+    }
+    .rec-ico { font-size: 20px; display: block; margin-bottom: 6px; }
+    .rec-name { font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+    .rec-val {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 26px; font-weight: 700; line-height: 1;
+    }
+    .rec-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .rec-total { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .history-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px;
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 8px;
+    }
+    .hi-ico { font-size: 20px; }
+    .hi-info { flex: 1; }
+    .hi-name { font-size: 14px; font-weight: 500; }
+    .hi-date { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .hi-reps { font-family: 'Unbounded', sans-serif; font-size: 16px; font-weight: 700; }
+
+    .empty-state {
+      text-align: center; color: var(--muted);
+      padding: 40px 20px; font-size: 14px;
+    }
+
+    /* ═══════════════ PROFILE ═══════════════ */
+    .profile-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r); padding: 24px;
+      text-align: center; margin-bottom: 16px;
+    }
+    .profile-ava {
+      width: 72px; height: 72px;
+      background: rgba(232,255,71,0.12);
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Unbounded', sans-serif;
+      font-size: 28px; font-weight: 700; color: var(--accent);
+      margin: 0 auto 12px;
+    }
+    .profile-name {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 18px; font-weight: 700; margin-bottom: 4px;
+    }
+    .profile-email { font-size: 13px; color: var(--muted); }
+
+    .profile-stats {
+      display: flex; gap: 10px; margin-bottom: 24px;
+    }
+    .pstat {
+      flex: 1; background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px;
+      text-align: center;
+    }
+    .pstat-val {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 20px; font-weight: 700; line-height: 1;
+    }
+    .pstat-lbl { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+    .prog-row {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px;
+      margin-bottom: 8px;
+    }
+    .pr-info { flex: 1; }
+    .pr-name { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+    .pr-bar { height: 4px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+    .pr-fill { height: 100%; border-radius: 4px; transition: width 0.5s var(--ease); }
+    .pr-pct {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 12px; font-weight: 700; min-width: 36px; text-align: right;
+    }
+
+    .btn-logout {
+      width: 100%; margin-top: 20px;
+      background: none; border: 1px solid #333;
+      border-radius: var(--r); padding: 14px;
+      color: #666; font-family: 'DM Sans', sans-serif;
+      font-size: 14px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-logout:hover { border-color: #ff5555; color: #ff5555; }
+
+    /* ═══════════════ TOAST ═══════════════ */
+    #toast {
+      position: fixed; bottom: 90px; left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px; padding: 11px 18px;
+      font-size: 13px; white-space: nowrap;
+      opacity: 0; pointer-events: none;
+      transition: all 0.3s var(--ease);
+      z-index: 9999;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #toast.toast--show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ═══════════════ ANIMATIONS ═══════════════ */
+    .fade-in { animation: fadeUp 0.35s var(--ease) both; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ═══════════════ SCROLLBAR ═══════════════ */
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="toast"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
