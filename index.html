@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>ПУЛЬС</title>
+    
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%23000000'/><path d='M150 256h40l20-60 25 140 25-180 25 220 25-120 20 50h40' fill='none' stroke='%23e8ff47' stroke-width='35' stroke-linecap='round' stroke-linejoin='round'/><path d='M256 120c-40 0-70 30-70 70 0 50 140 180 140 180s140-130 140-180c0-40-30-70-70-70-25 0-45 15-55 35-10-20-30-35-55-35z' fill='none' stroke='%23e8ff47' stroke-width='20' opacity='0.4'/></svg>?v=3">
+
+    <style>
+        :root { --accent: #e8ff47; --bg: #000; --card: #121212; --gray: #888; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+        .container { padding: 60px 20px 40px; max-width: 420px; margin: auto; min-height: 100vh; }
+        
+        /* Кнопки и инпуты */
+        input { width: 100%; background: #111; border: 1px solid #222; padding: 18px; color: #fff; font-size: 16px; outline: none; margin-bottom: 15px; border-radius: 12px; }
+        .btn-main { width: 100%; background: var(--accent); border: none; padding: 20px; font-weight: 900; text-transform: uppercase; border-radius: 12px; color: #000; transition: 0.2s; }
+        .btn-main:active { transform: scale(0.98); opacity: 0.8; }
+
+        /* Карточки тренировок */
+        .card { background: var(--card); border-radius: 20px; overflow: hidden; margin-bottom: 20px; border: 1px solid #1a1a1a; box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
+        .img-container { width: 100%; height: 160px; background: #222; overflow: hidden; }
+        .img-container img { width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
+        .card-info { padding: 20px; }
+        .card h3 { margin: 0; font-size: 20px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; }
+        
+        /* Таймер и Прогресс */
+        .timer-box { background: var(--accent); color: #000; border-radius: 20px; padding: 30px; text-align: center; margin: 25px 0; box-shadow: 0 5px 15px rgba(232, 255, 71, 0.2); }
+        #timer-display { font-size: 60px; font-weight: 900; letter-spacing: -2px; }
+        .progress-container { width: 100%; height: 10px; background: #1a1a1a; border-radius: 5px; margin: 25px 0; overflow: hidden; }
+        #progress-bar { height: 100%; width: 0%; background: var(--accent); transition: 0.5s ease; }
+        
+        .exercise-item { display: flex; align-items: center; background: #0a0a0a; padding: 20px; border-radius: 15px; margin-bottom: 12px; border: 1px solid #151515; }
+        .exercise-item input { margin: 0 15px 0 0; width: 24px; height: 24px; accent-color: var(--accent); }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen" class="container" style="display: flex; flex-direction: column; justify-content: center; height: 100vh; text-align: center;">
+        <h1 style="font-size: 40px; color: var(--accent); letter-spacing: 8px; margin-bottom: 50px;">ПУЛЬС</h1>
+        <input type="email" id="email" placeholder="EMAIL">
+        <input type="password" id="pass" placeholder="ПАРОЛЬ">
+        <button class="btn-main" onclick="handleAuth()">ВОЙТИ</button>
+        <p onclick="toggleMode()" id="mode-text" style="color:var(--gray); margin-top:30px; font-size:12px; text-transform: uppercase; letter-spacing: 1px;">РЕГИСТРАЦИЯ</p>
+    </div>
+
+    <div id="app-content" class="container" style="display:none;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:40px;">
+            <div style="font-weight:900; letter-spacing:3px; color:var(--accent); font-size:18px;">PULSE</div>
+            <span onclick="location.reload()" style="color:var(--gray); font-size:10px; text-transform:uppercase; border:1px solid #222; padding:6px 12px; border-radius:20px;">ВЫХОД</span>
+        </div>
+
+        <div class="grid">
+            <div class="card" onclick="startWorkout('Турник', 'pullups')">
+                <div class="img-container"><img src="https://images.unsplash.com/photo-1598971639058-aba3c72b9a73?w=500"></div>
+                <div class="card-info"><h3>Турник</h3><p>Подтягивания и хват</p></div>
+            </div>
+            <div class="card" onclick="startWorkout('Брусья', 'dips')">
+                <div class="img-container"><img src="https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500"></div>
+                <div class="card-info"><h3>Брусья</h3><p>Мощный трицепс</p></div>
+            </div>
+            <div class="card" onclick="startWorkout('Отжимания', 'pushups')">
+                <div class="img-container"><img src="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=500"></div>
+                <div class="card-info"><h3>Отжимания</h3><p>Грудные мышцы</p></div>
+            </div>
+            <div class="card" onclick="startWorkout('Пресс', 'abs')">
+                <div class="img-container"><img src="https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=500"></div>
+                <div class="card-info"><h3>Пресс</h3><p>Стальной кор</p></div>
+            </div>
+            <div class="card" onclick="startWorkout('Бег', 'run')">
+                <div class="img-container"><img src="https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?w=500"></div>
+                <div class="card-info"><h3>Бег</h3><p>Кардио выносливость</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="training-page" class="container" style="display:none;">
+        <p onclick="toDashboard()" style="color:var(--gray); font-size:12px; margin-bottom:30px; text-transform:uppercase; letter-spacing:1px;">← К ПЛАНАМ</p>
+        <h2 id="training-title" style="color:var(--accent); font-size:28px; text-transform:uppercase;"></h2>
+        
+        <div class="progress-container"><div id="progress-bar"></div></div>
+
+        <div class="timer-box">
+            <div id="timer-display">00:00</div>
+            <div style="margin-top:20px; display:flex; justify-content:center; gap:15px;">
+                <button onclick="toggleTimer()" id="timer-btn" style="background:#000; color:#fff; border:none; padding:12px 30px; border-radius:10px; font-weight:bold; text-transform:uppercase;">СТАРТ</button>
+                <button onclick="resetTimer()" style="background:transparent; border:1px solid #000; color:#000; padding:12px 20px; border-radius:10px; font-weight:bold;">СБРОС</button>
+            </div>
+        </div>
+
+        <div id="exercise-list"></div>
+    </div>
+
+    <script>
+        const exercises = {
+            pullups: ["Классика: 3х12", "Широкий: 3х10", "Узкий: 3х10", "Вис: 60 сек"],
+            dips: ["Брусья: 4х15", "Наклон вперед: 3х12", "Трицепс: 3х12"],
+            pushups: ["Классика: 4х25", "Алмазные: 3х15", "Широкие: 3х20"],
+            abs: ["Скручивания: 4х30", "Подъем ног: 3х20", "Планка: 2 мин"],
+            run: ["Разминка: 5 мин", "Бег: 20 мин", "Заминка: 5 мин"]
+        };
+
+        let isLogin=true, timer, sec=0, running=false;
+
+        function toggleMode(){
+            isLogin=!isLogin;
+            document.getElementById('auth-title').innerText=isLogin?'ВХОД':'РЕГИСТРАЦИЯ';
+            document.getElementById('mode-text').innerText=isLogin?'РЕГИСТРАЦИЯ':'ВОЙТИ В АККАУНТ';
+        }
+
+        function handleAuth(){
+            const e=document.getElementById('email').value, p=document.getElementById('pass').value;
+            if(!e||!p) return alert('Заполни все поля!');
+            if(isLogin){
+                if(localStorage.getItem(e)===p){
+                    document.getElementById('auth-screen').style.display='none';
+                    document.getElementById('app-content').style.display='block';
+                } else alert('Неверный логин или пароль');
+            } else {
+                localStorage.setItem(e,p); alert('Аккаунт создан! Теперь войдите.'); toggleMode();
+            }
+        }
+
+        function startWorkout(name, type){
+            window.scrollTo(0,0);
+            document.getElementById('app-content').style.display='none';
+            document.getElementById('training-page').style.display='block';
+            document.getElementById('training-title').innerText = name;
+            const list=document.getElementById('exercise-list');
+            list.innerHTML = '';
+            exercises[type].forEach(ex => {
+                list.innerHTML += `<div class="exercise-item"><input type="checkbox" onchange="updateProgress('${type}')"><span>${ex}</span></div>`;
+            });
+            updateProgress(type);
+        }
+
+        function updateProgress(type){
+            const total=exercises[type].length, done=document.querySelectorAll('.exercise-item input:checked').length;
+            document.getElementById('progress-bar').style.width=(done/total*100)+'%';
+        }
+
+        function toDashboard(){
+            resetTimer();
+            document.getElementById('training-page').style.display='none';
+            document.getElementById('app-content').style.display='block';
+        }
+
+        function toggleTimer(){
+            if(!running){
+                timer=setInterval(()=>{
+                    sec++;
+                    let m=Math.floor(sec/60), s=sec%60;
+                    document.getElementById('timer-display').innerText=`${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+                },1000);
+                document.getElementById('timer-btn').innerText='ПАУЗА';
+            } else {
+                clearInterval(timer);
+                document.getElementById('timer-btn').innerText='СТАРТ';
+            }
+            running=!running;
+        }
+
+        function resetTimer(){
+            clearInterval(timer); running=false; sec=0;
+            document.getElementById('timer-display').innerText='00:00';
+            document.getElementById('timer-btn').innerText='СТАРТ';
+        }
+    </script>
+</body>
+</html>
