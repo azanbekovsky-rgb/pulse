@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>ПУЛЬС</title>
+    
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%23000000'/><path d='M50 256h60l35-100 40 250 45-320 40 380 40-210 40 100h72' stroke='%23e8ff47' stroke-width='35' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>">
+
+    <style>
+        :root { --accent: #e8ff47; --bg: #000; --card: #121212; --text: #fff; --gray: #666; }
+        
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, system-ui, sans-serif; line-height: 1.4; }
+        
+        .container { padding: 50px 20px; max-width: 400px; margin: auto; min-height: 100vh; }
+        
+        /* Auth */
+        #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; height: 100vh; }
+        h1 { font-size: 32px; text-transform: uppercase; letter-spacing: 6px; color: var(--accent); margin-bottom: 40px; }
+        input { width: 100%; background: transparent; border: none; border-bottom: 2px solid #222; padding: 15px 0; color: #fff; font-size: 16px; outline: none; margin-bottom: 25px; }
+        input:focus { border-bottom-color: var(--accent); }
+        .btn-main { width: 100%; background: var(--accent); border: none; padding: 18px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; border-radius: 8px; cursor: pointer; color: #000; }
+
+        /* Dashboard */
+        #app-content { display: none; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .grid { display: grid; gap: 15px; }
+        .card { background: var(--card); border-radius: 15px; overflow: hidden; border: 1px solid #1a1a1a; position: relative; }
+        .card img { width: 100%; height: 140px; object-fit: cover; opacity: 0.6; }
+        .card-info { padding: 15px; }
+        .card h3 { margin: 0; font-size: 18px; text-transform: uppercase; color: var(--accent); }
+        .card p { margin: 5px 0 0; font-size: 12px; color: var(--gray); }
+
+        /* Training Page */
+        #training-page { display: none; }
+        .timer-box { background: var(--accent); color: #000; border-radius: 12px; padding: 20px; text-align: center; margin: 20px 0; }
+        #timer-display { font-size: 48px; font-weight: 900; font-variant-numeric: tabular-nums; }
+        .progress-container { width: 100%; height: 6px; background: #222; border-radius: 3px; margin: 20px 0; overflow: hidden; }
+        #progress-bar { height: 100%; width: 0%; background: var(--accent); transition: 0.3s; }
+        
+        .exercise-row { display: flex; align-items: center; background: #0a0a0a; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 3px solid #222; }
+        .exercise-row.done { border-left-color: var(--accent); opacity: 0.5; }
+        .exercise-row input { margin: 0 15px 0 0; width: 22px; height: 22px; accent-color: var(--accent); }
+        
+        .back-link { color: var(--gray); text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen" class="container">
+        <h1 id="auth-title">ВХОД</h1>
+        <input type="email" id="email" placeholder="EMAIL">
+        <input type="password" id="pass" placeholder="ПАРОЛЬ">
+        <button class="btn-main" onclick="handleAuth()" id="btn-text">ВОЙТИ</button>
+        <p onclick="toggleAuth()" style="color:var(--gray); margin-top:25px; font-size:12px; letter-spacing:1px;">РЕГИСТРАЦИЯ</p>
+    </div>
+
+    <div id="app-content" class="container">
+        <div class="header">
+            <div style="text-transform: uppercase; letter-spacing: 2px; font-weight: bold;">Пульс / Тренировки</div>
+            <span onclick="location.reload()" style="color:var(--gray); font-size:12px;">ВЫХОД</span>
+        </div>
+
+        <div class="grid">
+            <div class="card" onclick="startWorkout('Турник', 'pullups')">
+                <img src="https://images.unsplash.com/photo-1598971639058-aba3c72b9a73?auto=format&fit=crop&w=400&q=80" alt="Турник">
+                <div class="card-info"><h3>Турник</h3><p>Подтягивания: Широкий, узкий, обратный хват</p></div>
+            </div>
+            <div class="card" onclick="startWorkout('Брусья', 'dips')">
+                <img src="https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=400&q=80" alt="Брусья">
+                <div class="card-info"><h3>Брусья</h3><p>Отжимания на брусьях и работа на трицепс</p></div>
+            </div>
+            <div class="card" onclick="startWorkout('Пол', 'pushups')">
+                <img src="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=400&q=80" alt="Отжимания">
+                <div class="card-info"><h3>Отжимания</h3><p>Классика, алмазные, широкие</p></div>
+            </div>
+            <div class="card" onclick="startWorkout('Пресс', 'abs')">
+                <img src="https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=400&q=80" alt="Пресс">
+                <div class="card-info"><h3>Пресс</h3><p>Скручивания, планка, подъем ног</p></div>
+            </div>
+            <div class="card" onclick="startWorkout('Бег', 'run')">
+                <img src="https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?auto=format&fit=crop&w=400&q=80" alt="Бег">
+                <div class="card-info"><h3>Бег</h3><p>Выносливость и жиросжигание</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="training-page" class="container">
+        <a href="#" class="back-link" onclick="toDashboard()">← К планам</a>
+        <h2 id="training-title" style="margin:0; text-transform:uppercase;"></h2>
+        
+        <div class="progress-container"><div id="progress-bar"></div></div>
+
+        <div class="timer-box">
+            <div id="timer-display">00:00</div>
+            <div style="margin-top:10px;">
+                <button onclick="toggleTimer()" id="timer-btn" style="background:black; color:white; border:none; padding:8px 20px; border-radius:5px; font-weight:bold;">СТАРТ</button>
+                <button onclick="resetTimer()" style="background:transparent; color:black; border:1px solid black; padding:8px 20px; border-radius:5px; margin-left:10px;">СБРОС</button>
+            </div>
+        </div>
+
+        <div id="exercise-list"></div>
+    </div>
+
+    <script>
+        // Данные упражнений
+        const exercises = {
+            pullups: ["Классические: 3х10", "Широкий хват: 3х8", "Узкий хват: 3х8", "Вис на время: 60с"],
+            dips: ["Классика на брусьях: 4х12", "Наклон вперед (грудь): 3х10", "Вертикально (трицепс): 3х10"],
+            pushups: ["Классические: 4х20", "Алмазные: 3х12", "Широкие: 3х15", "Взрывные: 3х10"],
+            abs: ["Скручивания: 3х30", "Подъем ног: 3х15", "Планка: 90 сек", "Велосипед: 60 сек"],
+            run: ["Разминка: 5 мин", "Бег в темпе: 15 мин", "Спринт: 30 сек х 5", "Заминка: 5 мин"]
+        };
+
+        let isLogin = true;
+        let timerInterval;
+        let seconds = 0;
+        let isRunning = false;
+
+        function toggleAuth() {
+            isLogin = !isLogin;
+            document.getElementById('auth-title').innerText = isLogin ? 'ВХОД' : 'РЕГИСТРАЦИЯ';
+            document.getElementById('btn-text').innerText = isLogin ? 'ВОЙТИ' : 'СОЗДАТЬ';
+        }
+
+        function handleAuth() {
+            const email = document.getElementById('email').value;
+            const pass = document.getElementById('pass').value;
+            if(!email || !pass) return alert('Заполни поля!');
+
+            if(isLogin) {
+                if(localStorage.getItem(email) === pass) showDashboard();
+                else alert('Ошибка входа');
+            } else {
+                localStorage.setItem(email, pass);
+                alert('Успех! Теперь входи.');
+                toggleAuth();
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('app-content').style.display = 'block';
+        }
+
+        function startWorkout(name, type) {
+            document.getElementById('app-content').style.display = 'none';
+            document.getElementById('training-page').style.display = 'block';
+            document.getElementById('training-title').innerText = name;
+            
+            const list = document.getElementById('exercise-list');
+            list.innerHTML = '';
+            exercises[type].forEach((ex, idx) => {
+                list.innerHTML += `
+                    <div class="exercise-row" id="ex-${idx}">
+                        <input type="checkbox" onclick="updateProgress('${type}')">
+                        <span>${ex}</span>
+                    </div>
+                `;
+            });
+            updateProgress(type);
+        }
+
+        function updateProgress(type) {
+            const total = exercises[type].length;
+            const checked = document.querySelectorAll('.exercise-row input:checked').length;
+            const percent = (checked / total) * 100;
+            document.getElementById('progress-bar').style.width = percent + '%';
+        }
+
+        function toDashboard() {
+            resetTimer();
+            document.getElementById('training-page').style.display = 'none';
+            document.getElementById('app-content').style.display = 'block';
+        }
+
+        // Таймер
+        function toggleTimer() {
+            if(isRunning) {
+                clearInterval(timerInterval);
+                document.getElementById('timer-btn').innerText = 'СТАРТ';
+            } else {
+                timerInterval = setInterval(() => {
+                    seconds++;
+                    let m = Math.floor(seconds / 60);
+                    let s = seconds % 60;
+                    document.getElementById('timer-display').innerText = 
+                        `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+                }, 1000);
+                document.getElementById('timer-btn').innerText = 'ПАУЗА';
+            }
+            isRunning = !isRunning;
+        }
+
+        function resetTimer() {
+            clearInterval(timerInterval);
+            isRunning = false;
+            seconds = 0;
+            document.getElementById('timer-display').innerText = '00:00';
+            document.getElementById('timer-btn').innerText = 'СТАРТ';
+        }
+    </script>
+</body>
+</html>
