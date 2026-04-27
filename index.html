@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <title>ПУЛЬС</title>
+    
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%23000000'/><path d='M160 140v232M160 160h192M352 140v232' stroke='%23e8ff47' stroke-width='45' stroke-linecap='square' fill='none'/></svg>">
+
+    <style>
+        :root { --accent: #e8ff47; --bg: #000; --card: #111; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: -apple-system, system-ui, sans-serif; overflow-x: hidden; }
+        .container { padding: 40px 20px; max-width: 400px; margin: auto; min-height: 100vh; box-sizing: border-box; }
+        
+        /* Auth Styles */
+        #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; height: 100vh; }
+        h1 { font-size: 28px; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 40px; color: var(--accent); }
+        input { width: 100%; background: transparent; border: none; border-bottom: 1px solid #333; padding: 12px 0; color: #fff; font-size: 16px; outline: none; margin-bottom: 20px; }
+        button { width: 100%; background: var(--accent); border: none; padding: 16px; font-weight: bold; text-transform: uppercase; color: #000; border-radius: 4px; cursor: pointer; }
+        
+        /* App Content */
+        #app-content { display: none; }
+        .menu-grid { display: grid; gap: 15px; margin-top: 30px; }
+        .plan-card { background: var(--card); border: 1px solid #222; padding: 20px; border-radius: 12px; text-align: left; transition: 0.2s; }
+        .plan-card:active { transform: scale(0.97); background: #1a1a1a; }
+        .plan-card h3 { margin: 0; font-size: 18px; color: var(--accent); text-transform: uppercase; }
+        .plan-card p { margin: 5px 0 0; color: #666; font-size: 13px; }
+
+        /* Training Detail */
+        #training-detail { display: none; }
+        .exercise-item { border-bottom: 1px solid #222; padding: 15px 0; display: flex; justify-content: space-between; }
+        .back-btn { background: transparent; color: #666; border: 1px solid #333; margin-bottom: 20px; padding: 8px; width: auto; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen" class="container">
+        <h1 id="auth-title">ВХОД</h1>
+        <input type="email" id="email" placeholder="ПОЧТА">
+        <input type="password" id="pass" placeholder="ПАРОЛЬ">
+        <button onclick="handleAuth()" id="main-btn">ВОЙТИ</button>
+        <a href="#" onclick="toggleMode()" style="color:#666; font-size:12px; margin-top:20px; text-decoration:none;">СОЗДАТЬ АККАУНТ</a>
+    </div>
+
+    <div id="app-content" class="container">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2 style="font-size:14px; letter-spacing:2px; color:var(--accent);">ПУЛЬС / ПЛАНЫ</h2>
+            <span onclick="location.reload()" style="color:#444; font-size:12px;">ВЫХОД</span>
+        </div>
+        
+        <div class="menu-grid">
+            <div class="plan-card" onclick="openTraining('СИЛОВАЯ', ['Отжимания: 3х15', 'Приседания: 3х20', 'Планка: 60 сек'])">
+                <h3>Силовая</h3>
+                <p>Работа на рельеф и массу</p>
+            </div>
+            <div class="plan-card" onclick="openTraining('КАРДИО', ['Бег на месте: 5 мин', 'Бёрпи: 3х10', 'Прыжки: 2 мин'])">
+                <h3>Кардио</h3>
+                <p>Сжигание жира и выносливость</p>
+            </div>
+            <div class="plan-card" onclick="openTraining('ЙОГА', ['Растяжка спины', 'Поза воина', 'Медитация: 5 мин'])">
+                <h3>Йога / Гибкость</h3>
+                <p>Восстановление и баланс</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="training-detail" class="container">
+        <button class="back-btn" onclick="backToMenu()">← НАЗАД</button>
+        <h1 id="training-name" style="text-align:left; margin-bottom:20px;"></h1>
+        <div id="exercises-list"></div>
+    </div>
+
+    <script>
+        let isLoginMode = true;
+
+        function toggleMode() {
+            isLoginMode = !isLoginMode;
+            document.getElementById('auth-title').innerText = isLoginMode ? 'ВХОД' : 'РЕГИСТРАЦИЯ';
+            document.getElementById('main-btn').innerText = isLoginMode ? 'ВОЙТИ' : 'СОЗДАТЬ';
+        }
+
+        function handleAuth() {
+            const email = document.getElementById('email').value;
+            const pass = document.getElementById('pass').value;
+            if (!email || !pass) return alert('Заполни поля');
+
+            if (isLoginMode) {
+                const savedPass = localStorage.getItem(email);
+                if (savedPass === pass) { showApp(); } else { alert('Ошибка входа'); }
+            } else {
+                localStorage.setItem(email, pass);
+                alert('Готово! Теперь входи.');
+                toggleMode();
+            }
+        }
+
+        function showApp() {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('app-content').style.display = 'block';
+        }
+
+        function openTraining(name, list) {
+            document.getElementById('app-content').style.display = 'none';
+            document.getElementById('training-detail').style.display = 'block';
+            document.getElementById('training-name').innerText = name;
+            
+            const listDiv = document.getElementById('exercises-list');
+            listDiv.innerHTML = '';
+            list.forEach(ex => {
+                listDiv.innerHTML += `<div class="exercise-item"><span>${ex}</span><input type="checkbox" style="width:20px; margin:0;"></div>`;
+            });
+        }
+
+        function backToMenu() {
+            document.getElementById('training-detail').style.display = 'none';
+            document.getElementById('app-content').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
