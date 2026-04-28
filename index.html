@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Pulse PWA</title>
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Pulse">
+
+    <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgdmlld0JveD0iMCAwIDE4MCAxODAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+DQogIDwhLS0g0JzRj9Cz0LrQuNC5INC20LXQu9GC0YvQuSDRhNC+0L0gLS0+DQogIDxyZWN0IHdpZHRoPSIxODAiIGhlaWdodD0iMTgwIiByeD0iNDAiIGZpbGw9IiNGRkZERUQiLz4NCiAgDQogIDwhLS0g0KHQuNC80LLQvtC7INC/0YPQu9GM0YHQsCAo0LrRgNCw0YHQvdGL0 autorotate kptC0L3RgtGA0YUpIC0tPg0KICA8cGF0aCBkPSJNMzAgOTBING9MNzUgMTQwTDEwNSA0MEwxMjAgOTBIMTUwIiBzdHJva2U9IiNGRjQ1M0EiIHN0cm9rZS13aWR0aD0iOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+DQo8L3N2Zz4=">
+
+    <style>
+        :root {
+            --bg-color: #FFFDED; /* Тот самый мягкий желтый */
+            --pulse-color: #FF453A; /* Красный для пульса */
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: var(--bg-color);
+            color: #333;
+            text-align: center;
+            padding: 20px;
+        }
+        h1 { font-weight: 700; font-size: 2.5rem; margin-bottom: 10px; }
+        p { color: #666; margin-bottom: 30px; }
+
+        /* Стиль кнопки, похожий на iOS */
+        .pulse-btn {
+            padding: 16px 32px;
+            background-color: var(--pulse-color);
+            border: none;
+            border-radius: 50px;
+            color: white;
+            font-weight: 600;
+            font-size: 1.1rem;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 69, 58, 0.4);
+            transition: transform 0.1s ease, box-shadow 0.2s ease;
+            -webkit-tap-highlight-color: transparent; /* Убираем синий блик при клике */
+        }
+        .pulse-btn:active {
+            transform: scale(0.97);
+            box-shadow: 0 2px 8px rgba(255, 69, 58, 0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Пульс</h1>
+    <p>Добавьте это приложение на экран «Домой» через меню «Поделиться» в Safari.</p>
+    
+    <button class="pulse-btn" onclick="togglePulse()">Тест индикатора на иконке</button>
+
+    <script>
+        let isPulsing = false;
+
+        async function togglePulse() {
+            if ('setAppBadge' in navigator) {
+                try {
+                    if (!isPulsing) {
+                        await navigator.setAppBadge(); // Включить красную точку
+                        alert("Индикатор (красная точка) включен! Проверьте иконку на домашнем экране.");
+                        isPulsing = true;
+                    } else {
+                        await navigator.clearAppBadge(); // Убрать точку
+                        alert("Индикатор выключен.");
+                        isPulsing = false;
+                    }
+                } catch (e) {
+                    console.error("Ошибка бейджа:", e);
+                }
+            } else {
+                alert("Ваша версия iOS или режим Safari не поддерживают бейджи иконок.");
+            }
+        }
+    </script>
+</body>
+</html>
